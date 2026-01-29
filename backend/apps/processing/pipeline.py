@@ -13,6 +13,7 @@ from .services import (
     EkaScribeService,
     EkaLabReportService,
     OpenAIService,
+    GeminiService,
     DirectParserService,
 )
 
@@ -50,23 +51,30 @@ class ProcessingPipeline:
     """
     
     # Processing chain - services to try for each document type
+    # Priority: Eka APIs first (internal), then Gemini (free), then OpenAI (paid)
     PROCESSING_CHAIN = {
         DocumentType.LAB_REPORT: [
-            ('eka_lab_report', EkaLabReportService),
+            ('eka_lab_report', EkaLabReportService),  # Eka first for lab reports
+            ('gemini', GeminiService),
             ('openai', OpenAIService),
         ],
         DocumentType.PRESCRIPTION: [
-            ('openai', OpenAIService),  # Primary for handwritten
+            ('eka_lab_report', EkaLabReportService),  # Eka can handle prescriptions too!
+            ('gemini', GeminiService),  # Fallback (free)
+            ('openai', OpenAIService),
         ],
         DocumentType.CLINICAL_TEXT: [
             ('eka_scribe', EkaScribeService),  # Primary for text
-            ('openai', OpenAIService),  # Fallback
+            ('gemini', GeminiService),
+            ('openai', OpenAIService),
         ],
         DocumentType.STRUCTURED_DATA: [
             ('direct_parser', DirectParserService),
         ],
         DocumentType.UNKNOWN: [
-            ('openai', OpenAIService),  # Let OpenAI figure it out
+            ('eka_lab_report', EkaLabReportService),  # Try Eka first for unknown images
+            ('gemini', GeminiService),
+            ('openai', OpenAIService),
         ],
     }
     
@@ -77,6 +85,7 @@ class ProcessingPipeline:
         self.services = {
             'eka_scribe': EkaScribeService(),
             'eka_lab_report': EkaLabReportService(),
+            'gemini': GeminiService(),
             'openai': OpenAIService(),
             'direct_parser': DirectParserService(),
         }

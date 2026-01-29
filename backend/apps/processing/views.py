@@ -67,26 +67,26 @@ class ProcessDocumentView(APIView):
                         content_type,
                     )
                 elif content_type in ['image/jpeg', 'image/png', 'image/webp', 'image/gif']:
-                    # Image file
-                    image_base64 = base64.b64encode(file_content).decode('utf-8')
+                    # Image file - pass raw bytes directly, let pipeline handle it
                     result = pipeline.process(
-                        content=image_base64,
-                        content_type='image/base64',
+                        content=file_content,  # Raw bytes, not base64
+                        content_type=content_type,  # Preserve original content type
+                        filename=file_name,
                         document_type=doc_type,
                     )
                 elif content_type == 'application/pdf':
-                    # PDF file
-                    pdf_base64 = base64.b64encode(file_content).decode('utf-8')
+                    # PDF file - pass raw bytes directly
                     result = pipeline.process(
-                        content=pdf_base64,
-                        content_type='application/pdf',
+                        content=file_content,  # Raw bytes, not base64
+                        content_type=content_type,
+                        filename=file_name,
                         document_type=doc_type,
                     )
                 else:
                     # Try as text
                     try:
                         text_content = file_content.decode('utf-8')
-                        result = pipeline.process_text(text_content, doc_type)
+                        result = pipeline.process_text(text_content, filename=file_name, document_type=doc_type)
                     except UnicodeDecodeError:
                         return Response({
                             'success': False,
@@ -98,7 +98,7 @@ class ProcessDocumentView(APIView):
                 doc_type = self._get_document_type(data['document_type']) if data['document_type'] != 'auto' else None
                 
                 logger.info(f"[ProcessDocument] Processing text ({len(text)} chars)")
-                result = pipeline.process_text(text, doc_type)
+                result = pipeline.process_text(text, filename="clinical_text.txt", document_type=doc_type)
             
             # Check if processing was successful
             if not result.success:
@@ -110,13 +110,13 @@ class ProcessDocumentView(APIView):
             
             # Normalize and save to database
             patients = normalizer.normalize_and_save(
-                extracted_data=result.data,
+                extracted_data=result.extracted_data,
                 hospital_name=data.get('hospital_name', ''),
                 location=data.get('location', ''),
             )
             
             # Prepare response
-            diseases_found = self._collect_diseases(result.data)
+            diseases_found = self._collect_diseases(result.extracted_data)
             
             response_data = {
                 'success': True,
@@ -124,7 +124,7 @@ class ProcessDocumentView(APIView):
                 'patients_created': len(patients),
                 'diseases_found': diseases_found,
                 'processing_method': result.service_used,
-                'raw_data': result.data if request.query_params.get('include_raw') == 'true' else None,
+                'raw_data': result.raw_responses if request.query_params.get('include_raw') == 'true' else None,
             }
             
             return Response(response_data, status=status.HTTP_200_OK)
@@ -198,7 +198,7 @@ class ProcessTextView(APIView):
         
         try:
             # Process text - primarily for clinical notes
-            result = pipeline.process_text(data['text'], DocumentType.CLINICAL_TEXT)
+            result = pipeline.process_text(data['text'], filename="clinical_text.txt", document_type=DocumentType.CLINICAL_TEXT)
             
             if not result.success:
                 return Response({
@@ -208,15 +208,15 @@ class ProcessTextView(APIView):
             
             # Normalize and save
             patients = normalizer.normalize_and_save(
-                extracted_data=result.data,
+                extracted_data=result.extracted_data,
                 hospital_name=data.get('hospital_name', ''),
                 location=data.get('location', ''),
             )
             
             # Collect diseases
             diseases = []
-            if 'diseases' in result.data:
-                for d in result.data['diseases']:
+            if 'diseases' in result.extracted_data:
+                for d in result.extracted_data['diseases']:
                     if isinstance(d, str):
                         diseases.append(d)
                     elif isinstance(d, dict):
@@ -335,15 +335,16 @@ class ProcessingStatusView(APIView):
         services = {
             'eka_scribe': {
                 'configured': bool(getattr(settings, 'EKASCRIBE_API_URL', '')),
-                'url': getattr(settings, 'EKASCRIBE_API_URL', '')[:50] + '...' if getattr(settings, 'EKASCRIBE_API_URL', '') else '',
             },
             'eka_lab_report': {
                 'configured': bool(getattr(settings, 'EKA_API_KEY', '')),
-                'has_api_key': bool(getattr(settings, 'EKA_API_KEY', '')),
+            },
+            'gemini': {
+                'configured': bool(getattr(settings, 'GEMINI_API_KEY', '')),
+                'note': 'FREE - 15 req/min, 1500 req/day',
             },
             'openai': {
                 'configured': bool(getattr(settings, 'OPENAI_API_KEY', '')),
-                'has_api_key': bool(getattr(settings, 'OPENAI_API_KEY', '')),
             },
             'direct_parser': {
                 'configured': True,  # Always available

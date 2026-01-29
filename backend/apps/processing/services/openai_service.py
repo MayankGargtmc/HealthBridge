@@ -44,6 +44,8 @@ class OpenAIService(BaseProcessingService):
         Returns:
             ProcessingResult with extracted data
         """
+        # log api key for debugging   
+        logger.debug(f"OpenAI API Key: {self.api_key}")
         if not self.is_available():
             return ProcessingResult(
                 status=ProcessingStatus.FAILED,

@@ -150,6 +150,7 @@ EKA_API_KEY = env('EKA_API_KEY', default='')
 EKA_API_BASE_URL = env('EKA_API_BASE_URL', default='https://api.eka.care')
 EKASCRIBE_API_URL = env('EKASCRIBE_API_URL', default='http://ekascribe.orbi.orbi/generate_eka_emr_template')
 OPENAI_API_KEY = env('OPENAI_API_KEY', default='')
+GEMINI_API_KEY = env('GEMINI_API_KEY', default='')
 
 # Celery settings (for async processing)
 CELERY_BROKER_URL = env('CELERY_BROKER_URL', default='redis://localhost:6379/0')

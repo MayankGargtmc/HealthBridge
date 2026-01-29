@@ -11,6 +11,7 @@ from .base import (
 from .eka_scribe import EkaScribeService
 from .eka_lab import EkaLabReportService
 from .openai_service import OpenAIService
+from .gemini_service import GeminiService
 from .direct_parser import DirectParserService
 
 __all__ = [
@@ -21,5 +22,6 @@ __all__ = [
     'EkaScribeService',
     'EkaLabReportService',
     'OpenAIService',
+    'GeminiService',
     'DirectParserService',
 ]

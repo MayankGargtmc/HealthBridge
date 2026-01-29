@@ -4,6 +4,7 @@ Service for processing medical documents using Eka Care API and OpenAI fallback.
 
 import logging
 import base64
+import time
 import httpx
 from django.conf import settings
 from django.utils import timezone
@@ -13,69 +14,164 @@ logger = logging.getLogger(__name__)
 
 
 class EkaAPIService:
-    """Service to interact with Eka Care API for lab report processing."""
+    """
+    Service to interact with Eka Care API for lab report processing.
+    
+    Uses 2-step flow:
+    1. POST /mr/api/v2/docs - Upload file, get document_id
+    2. GET /mr/api/v1/docs/{document_id}/result - Poll for parsed results
+    
+    API Reference: https://developer.eka.care/api-reference/general-tools/medical/lab-report/
+    """
     
     def __init__(self):
         self.api_key = settings.EKA_API_KEY
         self.base_url = settings.EKA_API_BASE_URL
-        self.timeout = 60.0
+        self.timeout = 90.0
+        self.poll_interval = 3  # seconds
+        self.max_polls = 80  # max attempts (4 mins)
     
     async def process_lab_report(self, file_content: bytes, file_type: str) -> Dict[str, Any]:
         """
-        Process a lab report using Eka Care API.
-        
-        API Reference: https://developer.eka.care/api-reference/general-tools/medical/lab-report/introduction
+        Process a lab report using Eka Care API (async version).
         """
         if not self.api_key:
             raise ValueError("EKA_API_KEY is not configured")
         
+        # Step 1: Upload file
+        document_id = await self._upload_file_async(file_content, file_type)
+        if not document_id:
+            raise ValueError("Failed to upload file - no document_id returned")
+        
+        logger.info(f"[EkaAPI] Uploaded file, document_id: {document_id}")
+        
+        # Step 2: Poll for results
+        result = await self._poll_for_result_async(document_id)
+        if not result:
+            raise ValueError("Timed out waiting for processing result")
+        
+        return result
+    
+    async def _upload_file_async(self, file_content: bytes, file_type: str) -> Optional[str]:
+        """Upload file and get document_id."""
         headers = {
             "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
         }
         
-        # Encode file to base64
-        file_base64 = base64.b64encode(file_content).decode('utf-8')
+        ext_map = {'pdf': 'pdf', 'jpeg': 'jpg', 'jpg': 'jpg', 'png': 'png'}
+        ext = ext_map.get(file_type.lower(), 'jpg')
+        content_type_map = {'pdf': 'application/pdf', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png'}
+        content_type = content_type_map.get(ext, 'image/jpeg')
         
-        payload = {
-            "file": file_base64,
-            "file_type": file_type,
-        }
+        files = {'file': (f"document.{ext}", file_content, content_type)}
+        params = {'dt': 'lr', 'task': 'smart'}
         
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(
-                f"{self.base_url}/v1/lab-report/extract",
+                f"{self.base_url}/mr/api/v2/docs",
                 headers=headers,
-                json=payload
+                files=files,
+                params=params
             )
             response.raise_for_status()
-            return response.json()
+            data = response.json()
+        
+        return data.get('document_id')
+    
+    async def _poll_for_result_async(self, document_id: str) -> Optional[Dict[str, Any]]:
+        """Poll for parsed result."""
+        import asyncio
+        
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        
+        for attempt in range(self.max_polls):
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(
+                    f"{self.base_url}/mr/api/v1/docs/{document_id}/result",
+                    headers=headers
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    status = data.get('status', '').lower()
+                    
+                    if status == 'completed':
+                        return data
+                    elif status in ['error', 'deleted']:
+                        return None
+                    
+                await asyncio.sleep(self.poll_interval)
+        
+        return None
     
     def process_lab_report_sync(self, file_content: bytes, file_type: str) -> Dict[str, Any]:
         """Synchronous version of process_lab_report."""
         if not self.api_key:
             raise ValueError("EKA_API_KEY is not configured")
         
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
+        # Step 1: Upload file
+        document_id = self._upload_file_sync(file_content, file_type)
+        if not document_id:
+            raise ValueError("Failed to upload file - no document_id returned")
         
-        file_base64 = base64.b64encode(file_content).decode('utf-8')
+        logger.info(f"[EkaAPI] Uploaded file, document_id: {document_id}")
         
-        payload = {
-            "file": file_base64,
-            "file_type": file_type,
-        }
+        # Step 2: Poll for results
+        result = self._poll_for_result_sync(document_id)
+        if not result:
+            raise ValueError("Timed out waiting for processing result")
+        
+        return result
+    
+    def _upload_file_sync(self, file_content: bytes, file_type: str) -> Optional[str]:
+        """Upload file and get document_id (sync)."""
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        
+        ext_map = {'pdf': 'pdf', 'jpeg': 'jpg', 'jpg': 'jpg', 'png': 'png'}
+        ext = ext_map.get(file_type.lower(), 'jpg')
+        content_type_map = {'pdf': 'application/pdf', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png'}
+        content_type = content_type_map.get(ext, 'image/jpeg')
+        
+        files = {'file': (f"document.{ext}", file_content, content_type)}
+        params = {'dt': 'lr', 'task': 'smart'}
         
         with httpx.Client(timeout=self.timeout) as client:
             response = client.post(
-                f"{self.base_url}/v1/lab-report/extract",
+                f"{self.base_url}/mr/api/v2/docs",
                 headers=headers,
-                json=payload
+                files=files,
+                params=params
             )
             response.raise_for_status()
-            return response.json()
+            data = response.json()
+        
+        return data.get('document_id')
+    
+    def _poll_for_result_sync(self, document_id: str) -> Optional[Dict[str, Any]]:
+        """Poll for parsed result (sync)."""
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        
+        for attempt in range(self.max_polls):
+            logger.info(f"[EkaAPI] Polling for result, attempt {attempt + 1}/{self.max_polls}")
+            
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.get(
+                    f"{self.base_url}/mr/api/v1/docs/{document_id}/result",
+                    headers=headers
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    status = data.get('status', '').lower()
+                    
+                    if status == 'completed':
+                        return data
+                    elif status in ['error', 'deleted']:
+                        return None
+                
+                time.sleep(self.poll_interval)
+        
+        return None
 
 
 class OpenAIService:
