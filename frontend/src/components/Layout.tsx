@@ -9,7 +9,13 @@ import {
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
-const navigation = [
+interface NavigationItem {
+  name: string
+  href: string
+  icon: React.ComponentType<{ className?: string }>
+}
+
+const navigation: NavigationItem[] = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Upload Documents', href: '/upload', icon: Upload },
   { name: 'Patients', href: '/patients', icon: Users },
@@ -35,6 +41,7 @@ export default function Layout() {
         <nav className="mt-6 px-3">
           {navigation.map((item) => {
             const isActive = location.pathname === item.href
+            const Icon = item.icon
             return (
               <Link
                 key={item.name}
@@ -46,7 +53,7 @@ export default function Layout() {
                     : 'text-gray-600 hover:bg-gray-50'
                 )}
               >
-                <item.icon className="h-5 w-5" />
+                <Icon className="h-5 w-5" />
                 {item.name}
               </Link>
             )
@@ -63,3 +70,4 @@ export default function Layout() {
     </div>
   )
 }
+

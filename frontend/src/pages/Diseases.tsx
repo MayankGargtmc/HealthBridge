@@ -15,16 +15,17 @@ import {
 } from 'recharts'
 import { Activity, Users } from 'lucide-react'
 import { analyticsApi } from '../services/api'
+import type { DiseaseAnalytics, Disease } from '@/types'
 
 const COLORS = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16']
 
 export default function Diseases() {
-  const [selectedDisease, setSelectedDisease] = useState(null)
+  const [selectedDisease, setSelectedDisease] = useState<number | null>(null)
 
   const { data: diseaseData, isLoading } = useQuery({
     queryKey: ['disease-analytics', selectedDisease],
     queryFn: () => analyticsApi.diseases({ 
-      disease_id: selectedDisease 
+      disease_id: selectedDisease || undefined
     }).then(res => res.data),
   })
 
@@ -43,7 +44,7 @@ export default function Diseases() {
 
   // If viewing all diseases
   if (!selectedDisease) {
-    const diseases = diseaseData || []
+    const diseases = (diseaseData as Disease[]) || []
     
     return (
       <div>
@@ -54,7 +55,7 @@ export default function Diseases() {
 
         {/* Disease Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-          {diseases.map((disease) => (
+          {diseases.map((disease: Disease & { age_groups?: Array<{ age_group: string; count: number }>; category?: string }) => (
             <div 
               key={disease.id}
               onClick={() => setSelectedDisease(disease.id)}
@@ -75,7 +76,7 @@ export default function Diseases() {
               )}
               
               {/* Mini age distribution */}
-              {disease.age_groups?.length > 0 && (
+              {disease.age_groups && disease.age_groups.length > 0 && (
                 <div className="mt-4 flex gap-1">
                   {disease.age_groups.map((ag, idx) => (
                     <div 
@@ -101,7 +102,7 @@ export default function Diseases() {
         )}
 
         {/* Age Distribution by Disease Chart */}
-        {ageData?.by_disease?.length > 0 && (
+        {ageData?.by_disease && ageData.by_disease.length > 0 && (
           <div className="card">
             <h2 className="text-lg font-semibold mb-4">Age Distribution by Disease</h2>
             <ResponsiveContainer width="100%" height={400}>
@@ -125,7 +126,7 @@ export default function Diseases() {
   }
 
   // Viewing specific disease
-  const disease = diseaseData
+  const disease = diseaseData as DiseaseAnalytics
   
   return (
     <div>
@@ -136,9 +137,9 @@ export default function Diseases() {
         >
           ← Back to all diseases
         </button>
-        <h1 className="text-2xl font-bold text-gray-900">{disease?.disease?.name}</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{disease?.disease || 'Unknown Disease'}</h1>
         <p className="text-gray-500">
-          {disease?.total_patients} patients diagnosed
+          {disease?.patient_count || 0} patients diagnosed
         </p>
       </div>
 
@@ -146,9 +147,9 @@ export default function Diseases() {
         {/* Age Distribution */}
         <div className="card">
           <h2 className="text-lg font-semibold mb-4">Age Distribution</h2>
-          {disease?.age_groups?.length > 0 ? (
+          {disease?.age_distribution && disease.age_distribution.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={disease.age_groups}>
+              <BarChart data={disease.age_distribution}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="age_group" />
                 <YAxis />
@@ -166,7 +167,7 @@ export default function Diseases() {
         {/* Gender Distribution */}
         <div className="card">
           <h2 className="text-lg font-semibold mb-4">Gender Distribution</h2>
-          {disease?.gender_distribution?.length > 0 ? (
+          {disease?.gender_distribution && disease.gender_distribution.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
@@ -176,9 +177,9 @@ export default function Diseases() {
                   cx="50%"
                   cy="50%"
                   outerRadius={100}
-                  label={({ gender, count }) => `${gender}: ${count}`}
+                  label={({ gender, count }: { gender: string; count: number }) => `${gender}: ${count}`}
                 >
-                  {disease.gender_distribution.map((entry, index) => (
+                  {disease.gender_distribution.map((_entry: { gender: string; count: number }, index: number) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
@@ -196,7 +197,7 @@ export default function Diseases() {
         {/* Location Distribution */}
         <div className="card lg:col-span-2">
           <h2 className="text-lg font-semibold mb-4">Location Distribution</h2>
-          {disease?.location_distribution?.length > 0 ? (
+          {disease?.location_distribution && disease.location_distribution.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={disease.location_distribution} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" />
@@ -216,3 +217,4 @@ export default function Diseases() {
     </div>
   )
 }
+

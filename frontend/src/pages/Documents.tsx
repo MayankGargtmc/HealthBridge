@@ -6,20 +6,29 @@ import {
   CheckCircle, 
   XCircle, 
   RefreshCw,
-  Trash2,
-  Eye
+  Trash2
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { documentsApi } from '../services/api'
+import type { Document } from '@/types'
 
-const STATUS_CONFIG = {
+type DocumentStatus = 'pending' | 'processing' | 'completed' | 'failed'
+
+interface StatusConfig {
+  icon: React.ComponentType<{ className?: string }>
+  color: string
+  bg: string
+  label: string
+}
+
+const STATUS_CONFIG: Record<DocumentStatus, StatusConfig> = {
   pending: { icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50', label: 'Pending' },
   processing: { icon: RefreshCw, color: 'text-blue-600', bg: 'bg-blue-50', label: 'Processing' },
   completed: { icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50', label: 'Completed' },
   failed: { icon: XCircle, color: 'text-red-600', bg: 'bg-red-50', label: 'Failed' },
 }
 
-const DOCUMENT_TYPE_LABELS = {
+const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   handwritten: 'Handwritten',
   printed_lab: 'Lab Report',
   clinical_db: 'Clinical DB',
@@ -27,7 +36,7 @@ const DOCUMENT_TYPE_LABELS = {
 }
 
 export default function Documents() {
-  const [selectedDoc, setSelectedDoc] = useState(null)
+  const [selectedDoc, setSelectedDoc] = useState<Document | null>(null)
   const queryClient = useQueryClient()
 
   const { data: documentsData, isLoading } = useQuery({
@@ -36,7 +45,7 @@ export default function Documents() {
   })
 
   const processMutation = useMutation({
-    mutationFn: (id) => documentsApi.process(id),
+    mutationFn: (id: number) => documentsApi.process(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['documents'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
@@ -48,7 +57,7 @@ export default function Documents() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (id) => documentsApi.delete(id),
+    mutationFn: (id: number) => documentsApi.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['documents'] })
       toast.success('Document deleted')
@@ -71,7 +80,7 @@ export default function Documents() {
   })
 
   const documents = documentsData?.results || []
-  const pendingCount = documents.filter(d => d.processing_status === 'pending').length
+  const pendingCount = documents.filter(d => d.status === 'pending').length
 
   return (
     <div>
@@ -109,7 +118,7 @@ export default function Documents() {
             ) : (
               <div className="divide-y">
                 {documents.map((doc) => {
-                  const statusConfig = STATUS_CONFIG[doc.processing_status]
+                  const statusConfig = STATUS_CONFIG[doc.status as DocumentStatus] || STATUS_CONFIG.pending
                   const StatusIcon = statusConfig.icon
                   
                   return (
@@ -125,14 +134,14 @@ export default function Documents() {
                           <FileText className="h-6 w-6 text-gray-600" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium truncate">{doc.original_filename}</p>
+                          <p className="font-medium truncate">{doc.file_name}</p>
                           <div className="flex items-center gap-2 mt-1">
                             <span className="text-xs text-gray-500">
-                              {DOCUMENT_TYPE_LABELS[doc.document_type]}
+                              {DOCUMENT_TYPE_LABELS[doc.file_type] || doc.file_type}
                             </span>
                             <span className="text-xs text-gray-400">•</span>
                             <span className="text-xs text-gray-500">
-                              {new Date(doc.created_at).toLocaleDateString()}
+                              {new Date(doc.upload_date).toLocaleDateString()}
                             </span>
                           </div>
                         </div>
@@ -141,7 +150,7 @@ export default function Documents() {
                             <StatusIcon className="h-3 w-3" />
                             {statusConfig.label}
                           </span>
-                          {doc.processing_status === 'pending' && (
+                          {doc.status === 'pending' && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation()
@@ -185,59 +194,38 @@ export default function Documents() {
               <div className="space-y-4">
                 <div>
                   <label className="text-xs text-gray-500">Filename</label>
-                  <p className="text-sm font-medium">{selectedDoc.original_filename}</p>
+                  <p className="text-sm font-medium">{selectedDoc.file_name}</p>
                 </div>
                 
                 <div>
                   <label className="text-xs text-gray-500">Type</label>
-                  <p className="text-sm">{DOCUMENT_TYPE_LABELS[selectedDoc.document_type]}</p>
+                  <p className="text-sm">{DOCUMENT_TYPE_LABELS[selectedDoc.file_type] || selectedDoc.file_type}</p>
                 </div>
                 
                 <div>
                   <label className="text-xs text-gray-500">Status</label>
-                  <p className="text-sm">{STATUS_CONFIG[selectedDoc.processing_status].label}</p>
+                  <p className="text-sm">{STATUS_CONFIG[selectedDoc.status as DocumentStatus]?.label || selectedDoc.status}</p>
                 </div>
                 
-                {selectedDoc.hospital_clinic_name && (
+                {selectedDoc.processed_at && (
                   <div>
-                    <label className="text-xs text-gray-500">Hospital/Clinic</label>
-                    <p className="text-sm">{selectedDoc.hospital_clinic_name}</p>
+                    <label className="text-xs text-gray-500">Processed At</label>
+                    <p className="text-sm">{new Date(selectedDoc.processed_at).toLocaleString()}</p>
                   </div>
                 )}
                 
-                {selectedDoc.source_location && (
-                  <div>
-                    <label className="text-xs text-gray-500">Location</label>
-                    <p className="text-sm">{selectedDoc.source_location}</p>
-                  </div>
-                )}
-                
-                {selectedDoc.processing_error && (
+                {selectedDoc.error_message && (
                   <div>
                     <label className="text-xs text-red-500">Error</label>
-                    <p className="text-sm text-red-600">{selectedDoc.processing_error}</p>
+                    <p className="text-sm text-red-600">{selectedDoc.error_message}</p>
                   </div>
                 )}
                 
-                {selectedDoc.structured_data && Object.keys(selectedDoc.structured_data).length > 0 && (
+                {selectedDoc.patient_count !== undefined && (
                   <div>
-                    <label className="text-xs text-gray-500">Extracted Data</label>
-                    <pre className="text-xs bg-gray-50 p-3 rounded-lg overflow-auto max-h-64 mt-1">
-                      {JSON.stringify(selectedDoc.structured_data, null, 2)}
-                    </pre>
+                    <label className="text-xs text-gray-500">Patients Extracted</label>
+                    <p className="text-sm font-medium">{selectedDoc.patient_count}</p>
                   </div>
-                )}
-
-                {selectedDoc.file_url && (
-                  <a
-                    href={selectedDoc.file_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn-secondary w-full flex items-center justify-center gap-2"
-                  >
-                    <Eye className="h-4 w-4" />
-                    View Original
-                  </a>
                 )}
               </div>
             </>
@@ -251,3 +239,4 @@ export default function Documents() {
     </div>
   )
 }
+
