@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  # Backend - Django
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=True
+      - SECRET_KEY=django-insecure-healthbridge-hackathon-dev-key
+      - ALLOWED_HOSTS=localhost,127.0.0.1,backend
+      - MONGODB_URI=mongodb://mongo:27017/
+      - MONGODB_DB_NAME=healthbridge
+      - EKA_API_KEY=${EKA_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    volumes:
+      - ./backend:/app
+      - backend_media:/app/media
+    depends_on:
+      - mongo
+    restart: unless-stopped
+
+  # Frontend - React
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://localhost:8000/api
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # MongoDB - for raw document storage
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+  backend_media:
