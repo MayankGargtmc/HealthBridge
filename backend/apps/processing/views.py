@@ -272,8 +272,8 @@ class ProcessBatchView(APIView):
                     'success': False,
                     'message': result.error_message or 'Batch processing failed',
                     'total_records': 0,
-                    'processed': 0,
-                    'failed': 0,
+                    'processed_count': 0,
+                    'failed_count': 0,
                     'patients': [],
                     'errors': [result.error_message] if result.error_message else [],
                 }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
@@ -304,8 +304,8 @@ class ProcessBatchView(APIView):
                 'success': True,
                 'message': f'Batch processed successfully',
                 'total_records': total_records,
-                'processed': len(patients),
-                'failed': total_records - len(patients),
+                'processed_count': len(patients),
+                'failed_count': total_records - len(patients),
                 'patients': patient_summaries,
                 'errors': [],
             }, status=status.HTTP_200_OK)
@@ -316,8 +316,8 @@ class ProcessBatchView(APIView):
                 'success': False,
                 'message': str(e),
                 'total_records': 0,
-                'processed': 0,
-                'failed': 0,
+                'processed_count': 0,
+                'failed_count': 0,
                 'patients': [],
                 'errors': [str(e)],
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
