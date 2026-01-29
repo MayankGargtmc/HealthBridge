@@ -79,22 +79,35 @@ class DataNormalizer:
             logger.warning("[Normalizer] Skipping record without patient name")
             return None
         
+        # Log extracted patient info for debugging
+        logger.info(f"[Normalizer] Patient info extracted: {patient_info}")
+        logger.info(f"[Normalizer] Facility info extracted: {facility_info}")
+        
+        # Extract address - could be in patient or facility
+        patient_address = patient_info.get('address', '')
+        facility_address = facility_info.get('address', '')
+        
+        # Use patient address first, then facility address, then default location
+        location_value = patient_address or facility_address or default_location
+        
         # Prepare patient data
         patient_data = {
             'age': patient_info.get('age'),
             'gender': self._normalize_gender(patient_info.get('gender')),
             'phone_number': self._clean_phone(patient_info.get('phone')),
             'email': patient_info.get('email'),
-            'address': patient_info.get('address', ''),
+            'address': patient_address,  # Store full address
             'city': patient_info.get('city', ''),
             'state': patient_info.get('state', ''),
             'pincode': patient_info.get('pincode', ''),
             'hospital_clinic': facility_info.get('hospital_name') or default_hospital,
             'doctor_name': facility_info.get('doctor_name', ''),
-            'location': default_location,
+            'location': location_value,  # Use address as location for display
         }
         
-        # Remove None values
+        logger.info(f"[Normalizer] Prepared patient data: {patient_data}")
+        
+        # Remove None values (but keep empty strings for address fields)
         patient_data = {k: v for k, v in patient_data.items() if v is not None}
         
         # Create or update patient
@@ -114,11 +127,18 @@ class DataNormalizer:
                 defaults={**patient_data, 'name': name}
             )
             if not created:
-                # Update existing patient with new data
+                # Update existing patient with new data (including phone/address if now available)
+                updated_fields = []
                 for key, value in patient_data.items():
                     if value:  # Only update non-empty values
-                        setattr(patient, key, value)
-                patient.save()
+                        current_value = getattr(patient, key, None)
+                        # Update if current value is empty/None or if we have better data
+                        if not current_value or (key in ['phone_number', 'address', 'location'] and value):
+                            setattr(patient, key, value)
+                            updated_fields.append(key)
+                if updated_fields:
+                    patient.save()
+                    logger.info(f"[Normalizer] Updated patient fields: {updated_fields}")
         
         # Set source document
         if source_document:

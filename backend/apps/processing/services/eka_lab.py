@@ -2,6 +2,10 @@
 Eka Lab Report Service - For processing lab report images/PDFs.
 Extracts patient demographics and test results.
 
+Uses a hybrid approach:
+1. First process with Eka Lab API (high accuracy for structured data)
+2. Then enrich with Gemini for any missing fields (location, phone, additional health details)
+
 API Reference: 
 - Upload: https://developer.eka.care/api-reference/general-tools/medical/lab-report/upload-report
 - Get Result: https://developer.eka.care/api-reference/general-tools/medical/lab-report/parsed-report-result
@@ -15,6 +19,7 @@ from typing import Any, Dict, Optional
 from django.conf import settings
 
 from .base import BaseProcessingService, ProcessingResult, ProcessingStatus
+from .gemini_service import GeminiService
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +72,7 @@ LAB_VALUE_DISEASE_MAPPING = {
 class EkaLabReportService(BaseProcessingService):
     """
     Service to process lab reports using Eka Care Lab Report API.
+    Uses hybrid approach: Eka Lab API first, then Gemini for enrichment.
     
     API Reference:
     - Upload: POST https://api.eka.care/mr/api/v2/docs?dt=lr&task=smart
@@ -75,6 +81,7 @@ class EkaLabReportService(BaseProcessingService):
     2-Step Flow:
     1. POST /mr/api/v2/docs - Upload file, get document_id
     2. GET /mr/api/v1/docs/{document_id}/result - Poll for parsed results
+    3. Enrich with Gemini for missing fields (phone, address, additional details)
     """
     
     service_name = "eka_lab_report"
@@ -85,6 +92,7 @@ class EkaLabReportService(BaseProcessingService):
         self.timeout = 90.0
         self.poll_interval = 3  # seconds between polling (processing takes 1-4 mins)
         self.max_polls = 80  # max attempts (4 minutes total)
+        self.gemini_service = GeminiService()  # For enrichment
     
     def is_available(self) -> bool:
         """Check if Eka API key is configured."""
@@ -92,13 +100,16 @@ class EkaLabReportService(BaseProcessingService):
     
     def process(self, content: Any, content_type: str, **kwargs) -> ProcessingResult:
         """
-        Process a lab report/prescription using Eka Care API.
+        Process a lab report/prescription using hybrid approach:
+        1. Eka Care API (primary - high accuracy for structured data)
+        2. Gemini enrichment (secondary - fills missing fields like phone, address)
         
         Args:
             content: File content as bytes or base64 string
             content_type: MIME type (application/pdf, image/jpeg, image/png)
             **kwargs:
                 - infer_diseases: Whether to infer diseases from abnormal values (default: True)
+                - enrich_with_gemini: Whether to use Gemini for missing fields (default: True)
                 
         Returns:
             ProcessingResult with extracted data
@@ -118,6 +129,7 @@ class EkaLabReportService(BaseProcessingService):
             )
         
         infer_diseases = kwargs.get('infer_diseases', True)
+        enrich_with_gemini = kwargs.get('enrich_with_gemini', True)
         
         try:
             # Handle content - could be bytes or base64 string
@@ -131,7 +143,7 @@ class EkaLabReportService(BaseProcessingService):
             
             logger.info(f"[EkaLab] File bytes length: {len(file_bytes)}, first 20 bytes: {file_bytes[:20]}")
             
-            # Step 1: Upload the file
+            # Step 1: Upload the file to Eka API
             request_id = self._upload_file(file_bytes, content_type)
             
             if not request_id:
@@ -143,7 +155,7 @@ class EkaLabReportService(BaseProcessingService):
             
             logger.info(f"[EkaLab] Uploaded file, request_id: {request_id}")
             
-            # Step 2: Poll for results
+            # Step 2: Poll for results from Eka API
             result = self._poll_for_result(request_id)
             
             if not result:
@@ -153,10 +165,18 @@ class EkaLabReportService(BaseProcessingService):
                     service_used=self.service_name
                 )
             
-            logger.info(f"[EkaLab] Successfully got parsed result", extra={"result": result})
+            logger.info(f"[EkaLab] Successfully got parsed result from Eka API")
             
-            # Parse and extract data
+            # Parse Eka API response
             extracted_data = self._parse_response(result, infer_diseases)
+            
+            # Step 3: Enrich with Gemini if enabled and there are missing fields
+            if enrich_with_gemini and self.gemini_service.is_available():
+                extracted_data = self._enrich_with_gemini(
+                    extracted_data, 
+                    content if isinstance(content, str) else base64.b64encode(file_bytes).decode(),
+                    content_type
+                )
             
             return ProcessingResult(
                 status=ProcessingStatus.SUCCESS,
@@ -745,3 +765,202 @@ class EkaLabReportService(BaseProcessingService):
                                 seen_diseases.add(disease['name'])
         
         return inferred
+
+    def _enrich_with_gemini(self, eka_data: Dict[str, Any], content_base64: str, content_type: str) -> Dict[str, Any]:
+        """
+        Enrich Eka API data with Gemini for missing fields.
+        
+        Gemini is used to fill in:
+        - Patient phone number
+        - Patient address/location
+        - Additional diseases/diagnoses not captured
+        - Additional symptoms
+        - Hospital/clinic address
+        - Any other missing health details
+        
+        Args:
+            eka_data: Data already extracted from Eka API
+            content_base64: Base64 encoded file content
+            content_type: MIME type of the file
+            
+        Returns:
+            Enriched data dictionary
+        """
+        try:
+            logger.info("[EkaLab] Enriching with Gemini for missing fields...")
+            
+            # Determine document type for Gemini
+            doc_type = eka_data.get('document_type', 'lab_report')
+            if doc_type == 'prescription':
+                gemini_doc_type = 'prescription'
+            else:
+                gemini_doc_type = 'lab_report'
+            
+            # Process with Gemini
+            gemini_result = self.gemini_service.process(
+                content=content_base64,
+                content_type=content_type,
+                document_type=gemini_doc_type
+            )
+            
+            if gemini_result.status != ProcessingStatus.SUCCESS:
+                logger.warning(f"[EkaLab] Gemini enrichment failed: {gemini_result.error_message}")
+                return eka_data
+            
+            gemini_data = gemini_result.extracted_data or {}
+            
+            # Merge data - Eka data takes priority, Gemini fills gaps
+            enriched_data = self._merge_extracted_data(eka_data, gemini_data)
+            
+            logger.info(f"[EkaLab] Enrichment complete. Added fields from Gemini.")
+            
+            return enriched_data
+            
+        except Exception as e:
+            logger.error(f"[EkaLab] Gemini enrichment error: {str(e)}")
+            # Return original data if enrichment fails
+            return eka_data
+    
+    def _merge_extracted_data(self, primary: Dict[str, Any], secondary: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Merge two extracted data dictionaries.
+        Primary (Eka) data takes precedence, secondary (Gemini) fills missing fields.
+        
+        Args:
+            primary: Primary data (from Eka API) - trusted source
+            secondary: Secondary data (from Gemini) - used to fill gaps
+            
+        Returns:
+            Merged data dictionary
+        """
+        merged = dict(primary)
+        
+        # Merge patient info - fill missing fields only
+        primary_patient = primary.get('patient', {}) or {}
+        secondary_patient = secondary.get('patient', {}) or {}
+        
+        merged_patient = dict(primary_patient)
+        
+        # Fields Eka API typically misses
+        fields_to_enrich = ['phone', 'address', 'email', 'blood_group', 'emergency_contact']
+        
+        for field in fields_to_enrich:
+            if not merged_patient.get(field) and secondary_patient.get(field):
+                merged_patient[field] = secondary_patient[field]
+                logger.info(f"[EkaLab] Enriched patient.{field} from Gemini")
+        
+        # Also fill basic fields if missing
+        for field in ['name', 'age', 'gender']:
+            if not merged_patient.get(field) and secondary_patient.get(field):
+                merged_patient[field] = secondary_patient[field]
+                logger.info(f"[EkaLab] Filled patient.{field} from Gemini")
+        
+        merged['patient'] = merged_patient
+        
+        # Merge diseases - add any new diseases from Gemini not in Eka results
+        primary_diseases = primary.get('diseases', []) or []
+        secondary_diseases = secondary.get('diseases', []) or []
+        
+        existing_disease_names = {d.get('name', '').lower() for d in primary_diseases if d.get('name')}
+        
+        for disease in secondary_diseases:
+            disease_name = disease.get('name', '')
+            if disease_name and disease_name.lower() not in existing_disease_names:
+                disease_entry = {
+                    "name": disease_name,
+                    "icd_code": disease.get('icd_code'),
+                    "severity": disease.get('severity'),
+                    "source": "Enriched from Gemini"
+                }
+                primary_diseases.append(disease_entry)
+                existing_disease_names.add(disease_name.lower())
+                logger.info(f"[EkaLab] Added disease from Gemini: {disease_name}")
+        
+        merged['diseases'] = primary_diseases
+        
+        # Merge symptoms - add any new symptoms from Gemini
+        primary_symptoms = primary.get('symptoms', []) or []
+        secondary_symptoms = secondary.get('symptoms', []) or []
+        
+        existing_symptom_names = set()
+        for s in primary_symptoms:
+            if isinstance(s, dict):
+                existing_symptom_names.add(s.get('name', '').lower())
+            elif isinstance(s, str):
+                existing_symptom_names.add(s.lower())
+        
+        for symptom in secondary_symptoms:
+            symptom_name = symptom if isinstance(symptom, str) else symptom.get('name', '')
+            if symptom_name and symptom_name.lower() not in existing_symptom_names:
+                if isinstance(symptom, str):
+                    primary_symptoms.append({"name": symptom, "source": "Enriched from Gemini"})
+                else:
+                    symptom['source'] = "Enriched from Gemini"
+                    primary_symptoms.append(symptom)
+                existing_symptom_names.add(symptom_name.lower())
+                logger.info(f"[EkaLab] Added symptom from Gemini: {symptom_name}")
+        
+        merged['symptoms'] = primary_symptoms
+        
+        # Merge medications - add any new medications from Gemini
+        primary_meds = primary.get('medications', []) or []
+        secondary_meds = secondary.get('medications', []) or []
+        
+        existing_med_names = {m.get('name', '').lower() for m in primary_meds if m.get('name')}
+        
+        for med in secondary_meds:
+            med_name = med.get('name', '')
+            if med_name and med_name.lower() not in existing_med_names:
+                med['source'] = "Enriched from Gemini"
+                primary_meds.append(med)
+                existing_med_names.add(med_name.lower())
+                logger.info(f"[EkaLab] Added medication from Gemini: {med_name}")
+        
+        merged['medications'] = primary_meds
+        
+        # Merge vitals - fill missing vitals
+        primary_vitals = primary.get('vitals', {}) or {}
+        secondary_vitals = secondary.get('vitals', {}) or {}
+        
+        merged_vitals = dict(primary_vitals)
+        for key, value in secondary_vitals.items():
+            if value and not merged_vitals.get(key):
+                merged_vitals[key] = value
+                logger.info(f"[EkaLab] Enriched vitals.{key} from Gemini")
+        
+        merged['vitals'] = merged_vitals
+        
+        # Merge facility info - fill missing fields
+        primary_facility = primary.get('facility', {}) or {}
+        secondary_facility = secondary.get('facility', {}) or {}
+        
+        merged_facility = dict(primary_facility)
+        facility_fields = ['hospital_name', 'doctor_name', 'address', 'phone', 'email', 'registration_number']
+        
+        for field in facility_fields:
+            if not merged_facility.get(field) and secondary_facility.get(field):
+                merged_facility[field] = secondary_facility[field]
+                logger.info(f"[EkaLab] Enriched facility.{field} from Gemini")
+        
+        merged['facility'] = merged_facility
+        
+        # Merge lab results - Gemini might catch some that Eka missed
+        primary_labs = primary.get('lab_results', []) or []
+        secondary_labs = secondary.get('lab_results', []) or []
+        
+        existing_test_names = {l.get('test', '').lower() for l in primary_labs if l.get('test')}
+        
+        for lab in secondary_labs:
+            test_name = lab.get('test', '')
+            if test_name and test_name.lower() not in existing_test_names:
+                lab['source'] = "Enriched from Gemini"
+                primary_labs.append(lab)
+                existing_test_names.add(test_name.lower())
+                logger.info(f"[EkaLab] Added lab result from Gemini: {test_name}")
+        
+        merged['lab_results'] = primary_labs
+        
+        # Mark as enriched
+        merged['enriched_with_gemini'] = True
+        
+        return merged

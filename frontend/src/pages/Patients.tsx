@@ -197,13 +197,14 @@ export default function Patients() {
                 <tbody className="divide-y divide-gray-100">
                   {patients.map((patient) => {
                     const phone = patient.phone || patient.phone_number || '-'
+                    // Handle location - could be string or PatientLocation object
                     const location = typeof patient.location === 'string' 
-                      ? patient.location 
-                      : patient.location 
+                      ? patient.location
+                      : patient.location?.city && patient.location?.state
                         ? `${patient.location.city}, ${patient.location.state}`
-                        : patient.city && patient.state
-                          ? `${patient.city}, ${patient.state}`
-                          : '-'
+                        : patient.address
+                          || (patient.city && patient.state ? `${patient.city}, ${patient.state}` : null)
+                          || '-'
                     const hospital = patient.hospital || patient.hospital_clinic || '-'
                     const diseases = patient.diseases || patient.disease_list || []
                     

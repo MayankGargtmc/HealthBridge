@@ -38,11 +38,14 @@ export interface Patient {
   hospital?: string
   hospital_clinic?: string
   clinic?: string
+  address?: string
   location?: PatientLocation | string
   city?: string
   state?: string
   district?: string
   pincode?: string
+  email?: string
+  doctor_name?: string
   created_at: string
   updated_at?: string
 }

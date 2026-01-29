@@ -128,7 +128,7 @@ class GeminiService(BaseProcessingService):
         
         result = self._parse_response(response.text)
         
-        logger.info(f"[Gemini] Image processing complete")
+        logger.info(f"[Gemini] Image processing complete, response : {response}, result : {result}")
         
         return ProcessingResult(
             status=ProcessingStatus.SUCCESS,
