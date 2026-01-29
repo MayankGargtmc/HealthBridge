@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'apps.documents',
     'apps.patients',
     'apps.analytics',
+    'apps.processing',
 ]
 
 MIDDLEWARE = [
@@ -144,9 +145,10 @@ CORS_ALLOW_ALL_ORIGINS = True
 FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10 MB
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10 MB
 
-# External API Keys
+# External API Keys and URLs
 EKA_API_KEY = env('EKA_API_KEY', default='')
 EKA_API_BASE_URL = env('EKA_API_BASE_URL', default='https://api.eka.care')
+EKASCRIBE_API_URL = env('EKASCRIBE_API_URL', default='http://ekascribe.orbi.orbi/generate_eka_emr_template')
 OPENAI_API_KEY = env('OPENAI_API_KEY', default='')
 
 # Celery settings (for async processing)

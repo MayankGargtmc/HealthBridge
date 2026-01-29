@@ -58,4 +58,38 @@ export const analyticsApi = {
   age: () => api.get('/analytics/age/'),
 }
 
+// Processing API - New unified processing pipeline
+export const processingApi = {
+  // Process a single document (file or text)
+  processDocument: (formData, onProgress) =>
+    api.post('/process/document/', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (progressEvent) => {
+        if (onProgress) {
+          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+          onProgress(percent)
+        }
+      },
+    }),
+  
+  // Process clinical text directly
+  processText: (text, hospitalName = '', location = '') =>
+    api.post('/process/text/', { text, hospital_name: hospitalName, location }),
+  
+  // Process batch file (CSV/JSON)
+  processBatch: (formData, onProgress) =>
+    api.post('/process/batch/', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (progressEvent) => {
+        if (onProgress) {
+          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+          onProgress(percent)
+        }
+      },
+    }),
+  
+  // Check processing service status
+  status: () => api.get('/process/status/'),
+}
+
 export default api
