@@ -1,9 +1,10 @@
 import { useState, useCallback } from 'react'
-import { useDropzone } from 'react-dropzone'
+import { useDropzone, } from 'react-dropzone'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { Upload as UploadIcon, File, X, CheckCircle, Loader2, FileText, AlertCircle, Database } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { processingApi } from '../services/api'
+import type { ProcessDocumentResponse, ProcessTextResponse, ProcessBatchResponse } from '@/types'
 
 const DOCUMENT_TYPES = [
   { value: 'auto', label: 'Auto-detect' },
@@ -11,29 +12,40 @@ const DOCUMENT_TYPES = [
   { value: 'lab_report', label: 'Lab Report' },
   { value: 'clinical_text', label: 'Clinical Notes' },
   { value: 'structured_data', label: 'Database Export (CSV/JSON)' },
-]
+] as const
+
+type DocumentType = typeof DOCUMENT_TYPES[number]['value']
+type TabType = 'file' | 'text' | 'batch'
+type FileStatus = 'pending' | 'processing' | 'success' | 'error'
+
+interface FileItem {
+  file: File
+  id: string
+  status: FileStatus
+  result: ProcessDocumentResponse | ProcessBatchResponse | null
+}
 
 export default function Upload() {
-  const [files, setFiles] = useState([])
-  const [documentType, setDocumentType] = useState('auto')
+  const [files, setFiles] = useState<FileItem[]>([])
+  const [documentType, setDocumentType] = useState<DocumentType>('auto')
   const [hospitalName, setHospitalName] = useState('')
   const [location, setLocation] = useState('')
   const [clinicalText, setClinicalText] = useState('')
-  const [activeTab, setActiveTab] = useState('file') // 'file' or 'text' or 'batch'
-  const [processingResults, setProcessingResults] = useState([])
+  const [activeTab, setActiveTab] = useState<TabType>('file')
+  const [processingResults, setProcessingResults] = useState<(ProcessDocumentResponse | ProcessTextResponse | ProcessBatchResponse)[]>([])
   
   const queryClient = useQueryClient()
 
   // Check processing service status
-  const { data: serviceStatus } = useQuery({
+  const { data: statusData } = useQuery({
     queryKey: ['processingStatus'],
-    queryFn: () => processingApi.status(),
+    queryFn: () => processingApi.status().then(res => res.data),
     refetchInterval: 30000, // Refresh every 30 seconds
   })
 
   // Process document mutation
   const processDocumentMutation = useMutation({
-    mutationFn: async ({ file }) => {
+    mutationFn: async ({ file }: { file: File }) => {
       const formData = new FormData()
       formData.append('file', file)
       formData.append('document_type', documentType)
@@ -56,21 +68,23 @@ export default function Upload() {
       const response = await processingApi.processText(clinicalText, hospitalName, location)
       return response.data
     },
-    onSuccess: (data) => {
+    onSuccess: (data: ProcessTextResponse) => {
       queryClient.invalidateQueries({ queryKey: ['patients'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       setProcessingResults(prev => [...prev, data])
       setClinicalText('')
-      toast.success(`Processed: ${data.patients_created} patients, ${data.diseases_found?.length || 0} diseases found`)
+      const patientsCount = data.patients_created || 0
+      const diseasesCount = data.diseases_found?.length || 0
+      toast.success(`Processed: ${patientsCount} patients, ${diseasesCount} diseases found`)
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast.error(error.response?.data?.message || 'Failed to process text')
     }
   })
 
   // Process batch mutation
   const processBatchMutation = useMutation({
-    mutationFn: async ({ file }) => {
+    mutationFn: async ({ file }: { file: File }) => {
       const formData = new FormData()
       formData.append('file', file)
       formData.append('hospital_name', hospitalName)
@@ -83,18 +97,18 @@ export default function Upload() {
       queryClient.invalidateQueries({ queryKey: ['patients'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       setProcessingResults(prev => [...prev, data])
-      toast.success(`Batch processed: ${data.processed}/${data.total_records} records`)
+      toast.success(`Batch processed: ${data.processed_count}/${data.processed_count + data.failed_count} records`)
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast.error(error.response?.data?.message || 'Failed to process batch')
     }
   })
 
-  const onDrop = useCallback((acceptedFiles) => {
-    const newFiles = acceptedFiles.map(file => ({
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    const newFiles: FileItem[] = acceptedFiles.map(file => ({
       file,
-      id: Math.random().toString(36).substr(2, 9),
-      status: 'pending',
+      id: Math.random().toString(36).substring(2, 9),
+      status: 'pending' as FileStatus,
       result: null,
     }))
     setFiles(prev => [...prev, ...newFiles])
@@ -113,7 +127,7 @@ export default function Upload() {
     maxSize: 10 * 1024 * 1024,
   })
 
-  const removeFile = (id) => {
+  const removeFile = (id: string) => {
     setFiles(prev => prev.filter(f => f.id !== id))
   }
 
@@ -122,11 +136,11 @@ export default function Upload() {
       if (fileItem.status === 'success') continue
       
       setFiles(prev => 
-        prev.map(f => f.id === fileItem.id ? { ...f, status: 'processing' } : f)
+        prev.map(f => f.id === fileItem.id ? { ...f, status: 'processing' as FileStatus } : f)
       )
       
       try {
-        let result
+        let result: ProcessDocumentResponse | ProcessBatchResponse
         
         // Check if it's a batch file
         const isBatchFile = fileItem.file.name.endsWith('.csv') || fileItem.file.name.endsWith('.json')
@@ -138,15 +152,15 @@ export default function Upload() {
         }
         
         setFiles(prev => 
-          prev.map(f => f.id === fileItem.id ? { ...f, status: 'success', result } : f)
+          prev.map(f => f.id === fileItem.id ? { ...f, status: 'success' as FileStatus, result } : f)
         )
         
-        const diseasesCount = result.diseases_found?.length || 0
-        const patientsCount = result.patients_created || result.processed || 0
+        const diseasesCount = (result as ProcessDocumentResponse).diseases_found?.length || 0
+        const patientsCount = (result as ProcessDocumentResponse).patients_created || (result as ProcessBatchResponse).processed_count || 0
         toast.success(`Processed ${fileItem.file.name}: ${patientsCount} patients, ${diseasesCount} diseases`)
       } catch (error) {
         setFiles(prev => 
-          prev.map(f => f.id === fileItem.id ? { ...f, status: 'error', result: error.response?.data } : f)
+          prev.map(f => f.id === fileItem.id ? { ...f, status: 'error' as FileStatus, result: null } : f)
         )
         toast.error(`Failed to process ${fileItem.file.name}`)
       }
@@ -157,7 +171,7 @@ export default function Upload() {
     setFiles(prev => prev.filter(f => f.status !== 'success'))
   }
 
-  const getFileIcon = (fileName) => {
+  const getFileIcon = (fileName: string) => {
     if (fileName.endsWith('.csv') || fileName.endsWith('.json')) {
       return <Database className="h-5 w-5 text-green-500" />
     }
@@ -172,13 +186,13 @@ export default function Upload() {
       </div>
 
       {/* Service Status Banner */}
-      {serviceStatus?.data && (
+      {statusData && (
         <div className="mb-6 p-4 bg-gray-50 rounded-lg">
           <h3 className="text-sm font-medium text-gray-700 mb-2">Processing Services</h3>
           <div className="flex flex-wrap gap-4">
-            {Object.entries(serviceStatus.data.services || {}).map(([name, status]) => (
+            {Object.entries(statusData.services || {}).map(([name, status]) => (
               <div key={name} className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${status.configured ? 'bg-green-500' : 'bg-yellow-500'}`} />
+                <div className={`w-2 h-2 rounded-full ${status ? 'bg-green-500' : 'bg-yellow-500'}`} />
                 <span className="text-sm text-gray-600 capitalize">{name.replace(/_/g, ' ')}</span>
               </div>
             ))}
@@ -285,16 +299,16 @@ export default function Upload() {
                             </p>
                             <p className="text-xs text-gray-400">
                               {(fileItem.file.size / 1024).toFixed(1)} KB
-                              {fileItem.result?.processing_method && (
+                              {(fileItem.result as ProcessDocumentResponse)?.processing_method && (
                                 <span className="ml-2 text-primary-600">
-                                  via {fileItem.result.processing_method}
+                                  via {(fileItem.result as ProcessDocumentResponse).processing_method}
                                 </span>
                               )}
                             </p>
-                            {fileItem.result?.diseases_found?.length > 0 && (
+                            {(fileItem.result as ProcessDocumentResponse)?.diseases_found && (fileItem.result as ProcessDocumentResponse).diseases_found!.length > 0 && (
                               <p className="text-xs text-green-600 mt-1">
-                                Found: {fileItem.result.diseases_found.slice(0, 3).join(', ')}
-                                {fileItem.result.diseases_found.length > 3 && '...'}
+                                Found: {(fileItem.result as ProcessDocumentResponse).diseases_found!.slice(0, 3).join(', ')}
+                                {(fileItem.result as ProcessDocumentResponse).diseases_found!.length > 3 && '...'}
                               </p>
                             )}
                           </div>
@@ -377,10 +391,10 @@ Treatment: Started on Aspirin, Clopidogrel, Atorvastatin"
                     <div className="flex justify-between items-start">
                       <div>
                         <p className="text-sm font-medium text-gray-900">
-                          {result.patients_created || result.processed || 0} patient(s) processed
+                          {(result as ProcessDocumentResponse | ProcessTextResponse).patients_created || (result as ProcessBatchResponse).processed_count || 0} patient(s) processed
                         </p>
                         <p className="text-xs text-gray-500">
-                          Method: {result.processing_method || 'N/A'}
+                          Method: {(result as ProcessDocumentResponse).processing_method || 'N/A'}
                         </p>
                       </div>
                       <span className={`px-2 py-1 text-xs rounded ${
@@ -389,9 +403,9 @@ Treatment: Started on Aspirin, Clopidogrel, Atorvastatin"
                         {result.success ? 'Success' : 'Failed'}
                       </span>
                     </div>
-                    {result.diseases_found?.length > 0 && (
+                    {(result as ProcessDocumentResponse | ProcessTextResponse).diseases_found && (result as ProcessDocumentResponse | ProcessTextResponse).diseases_found!.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1">
-                        {result.diseases_found.map((disease, dIdx) => (
+                        {(result as ProcessDocumentResponse | ProcessTextResponse).diseases_found!.map((disease, dIdx) => (
                           <span 
                             key={dIdx}
                             className="px-2 py-0.5 bg-primary-100 text-primary-700 text-xs rounded"
@@ -418,7 +432,7 @@ Treatment: Started on Aspirin, Clopidogrel, Atorvastatin"
                 <label className="label">Document Type</label>
                 <select 
                   value={documentType}
-                  onChange={(e) => setDocumentType(e.target.value)}
+                  onChange={(e) => setDocumentType(e.target.value as DocumentType)}
                   className="input"
                 >
                   {DOCUMENT_TYPES.map(type => (
@@ -488,3 +502,4 @@ Treatment: Started on Aspirin, Clopidogrel, Atorvastatin"
     </div>
   )
 }
+

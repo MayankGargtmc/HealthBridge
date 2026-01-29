@@ -3,11 +3,19 @@ import { useQuery } from '@tanstack/react-query'
 import { Download, Search, Filter, ChevronLeft, ChevronRight } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { patientsApi, diseasesApi } from '../services/api'
+import type { Disease } from '@/types'
+
+interface Filters {
+  disease_name: string
+  gender: string
+  age_group: string
+  location: string
+}
 
 export default function Patients() {
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState<Filters>({
     disease_name: '',
     gender: '',
     age_group: '',
@@ -22,7 +30,7 @@ export default function Patients() {
       search,
       ...Object.fromEntries(
         Object.entries(filters).filter(([_, v]) => v !== '')
-      )
+      ) as Partial<Filters>
     }).then(res => res.data),
   })
 
@@ -31,7 +39,7 @@ export default function Patients() {
     queryFn: () => diseasesApi.list().then(res => res.data),
   })
 
-  const handleExport = async (format) => {
+  const handleExport = async (format: 'csv' | 'excel') => {
     try {
       const response = await patientsApi.export(filters, format)
       
@@ -112,7 +120,7 @@ export default function Patients() {
                 className="input"
               >
                 <option value="">All Diseases</option>
-                {diseases?.results?.map(disease => (
+                {diseases?.results?.map((disease: Disease) => (
                   <option key={disease.id} value={disease.name}>
                     {disease.name}
                   </option>
@@ -187,41 +195,54 @@ export default function Patients() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {patients.map((patient) => (
-                    <tr key={patient.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium">{patient.name}</td>
-                      <td className="px-4 py-3 text-gray-600">{patient.age || '-'}</td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-1 rounded-full text-xs ${
-                          patient.gender === 'male' ? 'bg-blue-100 text-blue-700' :
-                          patient.gender === 'female' ? 'bg-pink-100 text-pink-700' :
-                          'bg-gray-100 text-gray-700'
-                        }`}>
-                          {patient.gender || 'Unknown'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-600">{patient.phone_number || '-'}</td>
-                      <td className="px-4 py-3 text-gray-600">{patient.location || '-'}</td>
-                      <td className="px-4 py-3 text-gray-600">{patient.hospital_clinic || '-'}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-1">
-                          {patient.disease_list?.slice(0, 2).map((disease, idx) => (
-                            <span 
-                              key={idx}
-                              className="px-2 py-0.5 bg-primary-50 text-primary-700 rounded-full text-xs"
-                            >
-                              {disease}
-                            </span>
-                          ))}
-                          {patient.disease_list?.length > 2 && (
-                            <span className="text-xs text-gray-500">
-                              +{patient.disease_list.length - 2} more
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {patients.map((patient) => {
+                    const phone = patient.phone || patient.phone_number || '-'
+                    const location = typeof patient.location === 'string' 
+                      ? patient.location 
+                      : patient.location 
+                        ? `${patient.location.city}, ${patient.location.state}`
+                        : patient.city && patient.state
+                          ? `${patient.city}, ${patient.state}`
+                          : '-'
+                    const hospital = patient.hospital || patient.hospital_clinic || '-'
+                    const diseases = patient.diseases || patient.disease_list || []
+                    
+                    return (
+                      <tr key={patient.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 font-medium">{patient.name}</td>
+                        <td className="px-4 py-3 text-gray-600">{patient.age || '-'}</td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-1 rounded-full text-xs ${
+                            patient.gender === 'male' ? 'bg-blue-100 text-blue-700' :
+                            patient.gender === 'female' ? 'bg-pink-100 text-pink-700' :
+                            'bg-gray-100 text-gray-700'
+                          }`}>
+                            {patient.gender === 'unknown' ? 'Unknown' : patient.gender || 'Unknown'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-gray-600">{phone}</td>
+                        <td className="px-4 py-3 text-gray-600">{location}</td>
+                        <td className="px-4 py-3 text-gray-600">{hospital}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-1">
+                            {diseases.slice(0, 2).map((disease, idx) => (
+                              <span 
+                                key={idx}
+                                className="px-2 py-0.5 bg-primary-50 text-primary-700 rounded-full text-xs"
+                              >
+                                {disease}
+                              </span>
+                            ))}
+                            {diseases.length > 2 && (
+                              <span className="text-xs text-gray-500">
+                                +{diseases.length - 2} more
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -256,3 +277,4 @@ export default function Patients() {
     </div>
   )
 }
+

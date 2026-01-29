@@ -24,7 +24,14 @@ import { analyticsApi } from '../services/api'
 
 const COLORS = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
 
-function StatCard({ title, value, icon: Icon, color = 'primary' }) {
+interface StatCardProps {
+  title: string
+  value: number | string
+  icon: React.ComponentType<{ className?: string }>
+  color?: 'primary' | 'blue' | 'amber' | 'red'
+}
+
+function StatCard({ title, value, icon: Icon, color = 'primary' }: StatCardProps) {
   const colorClasses = {
     primary: 'bg-primary-50 text-primary-600',
     blue: 'bg-blue-50 text-blue-600',
@@ -170,9 +177,9 @@ export default function Dashboard() {
                   cx="50%"
                   cy="50%"
                   outerRadius={100}
-                  label={({ gender, count }) => `${gender}: ${count}`}
+                  label={({ gender, count }: { gender: string; count: number }) => `${gender}: ${count}`}
                 >
-                  {data.gender_distribution.map((entry, index) => (
+                  {data.gender_distribution.map((_entry: { gender: string; count: number }, index: number) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
@@ -190,3 +197,4 @@ export default function Dashboard() {
     </div>
   )
 }
+
