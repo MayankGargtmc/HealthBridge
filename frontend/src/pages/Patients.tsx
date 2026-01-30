@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Download, Search, Filter, ChevronLeft, ChevronRight } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { patientsApi, diseasesApi } from '../services/api'
+import { exportPatientsToExcel, exportPatientsToCSV } from '../lib/excelExport'
 import type { Disease } from '@/types'
 
 interface Filters {
@@ -39,22 +40,46 @@ export default function Patients() {
     queryFn: () => diseasesApi.list().then(res => res.data),
   })
 
-  const handleExport = async (format: 'csv' | 'excel') => {
+  const handleExport = (format: 'csv' | 'excel') => {
+    if (patients.length === 0) {
+      toast.error('No patients to export')
+      return
+    }
+
     try {
+      const timestamp = new Date().toISOString().split('T')[0]
+      const filename = `patients_export_${timestamp}.${format === 'excel' ? 'xlsx' : 'csv'}`
+      
+      if (format === 'excel') {
+        exportPatientsToExcel(patients, filename)
+      } else {
+        exportPatientsToCSV(patients, filename)
+      }
+      
+      toast.success(`Exported ${patients.length} patients as ${format.toUpperCase()}`)
+    } catch (error) {
+      console.error('Export error:', error)
+      toast.error('Failed to export data')
+    }
+  }
+
+  const handleExportAll = async (format: 'csv' | 'excel') => {
+    try {
+      // Use backend API to export ALL filtered records (not just current page)
       const response = await patientsApi.export(filters, format)
       
       // Create download link
       const url = window.URL.createObjectURL(new Blob([response.data]))
       const link = document.createElement('a')
       link.href = url
-      link.setAttribute('download', `patients_export.${format === 'excel' ? 'xlsx' : 'csv'}`)
+      link.setAttribute('download', `patients_export_all.${format === 'excel' ? 'xlsx' : 'csv'}`)
       document.body.appendChild(link)
       link.click()
       link.remove()
       
-      toast.success(`Exported as ${format.toUpperCase()}`)
+      toast.success(`Exported all filtered patients as ${format.toUpperCase()}`)
     } catch (error) {
-      toast.error('Failed to export data')
+      toast.error('Failed to export all data')
     }
   }
 
@@ -74,17 +99,29 @@ export default function Patients() {
           <button
             onClick={() => handleExport('csv')}
             className="btn-secondary flex items-center gap-2"
+            title="Export current page"
           >
             <Download className="h-4 w-4" />
-            Export CSV
+            Export CSV ({patients.length})
           </button>
           <button
             onClick={() => handleExport('excel')}
             className="btn-primary flex items-center gap-2"
+            title="Export current page"
           >
             <Download className="h-4 w-4" />
-            Export Excel
+            Export Excel ({patients.length})
           </button>
+          {(patientsData?.count || 0) > patients.length && (
+            <button
+              onClick={() => handleExportAll('excel')}
+              className="btn-secondary flex items-center gap-2 text-sm"
+              title="Export all filtered records"
+            >
+              <Download className="h-4 w-4" />
+              Export All ({patientsData?.count || 0})
+            </button>
+          )}
         </div>
       </div>
 

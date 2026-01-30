@@ -14,7 +14,11 @@ import type {
   ProcessingStatus,
 } from '@/types'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
+// Determine API base URL
+// Priority: 1. VITE_API_URL env var, 2. Explicitly use localhost:8000 in dev mode
+// This ensures requests go directly to the backend instead of relying on Vite proxy
+const API_BASE_URL = import.meta.env.VITE_API_URL || 
+  (import.meta.env.DEV ? 'http://localhost:8000/api' : '/api')
 
 const api: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
