@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import { 
   AlertTriangle, 
   TrendingUp, 
@@ -12,6 +13,7 @@ import {
   Bell,
   FileText,
   CheckCircle,
+  Database,
 } from 'lucide-react'
 import { 
   BarChart, 
@@ -27,6 +29,12 @@ import {
   Line,
 } from 'recharts'
 import { analyticsApi } from '../services/api'
+import { 
+  dummyDashboardData, 
+  dummySurveillanceData, 
+  dummyTrendsData, 
+  dummyComorbidityData 
+} from '../services/dummyData'
 
 const COLORS = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316']
 const AGE_COLORS = {
@@ -161,31 +169,45 @@ function ClusterCard({ cluster }: { cluster: GeographicCluster }) {
 // Main Surveillance Dashboard
 export default function SurveillanceDashboard() {
   const [selectedPeriod, setSelectedPeriod] = useState(30)
+  const [searchParams] = useSearchParams()
   
-  // Fetch basic dashboard stats
-  const { data: dashboardData } = useQuery({
+  // Check if demo mode is enabled via URL param ?demo=true
+  const isDemo = searchParams.get('demo') === 'true'
+  
+  // Fetch basic dashboard stats (skip if demo mode)
+  const { data: realDashboardData } = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => analyticsApi.dashboard().then(res => res.data),
+    enabled: !isDemo,
   })
   
-  // Fetch surveillance data
-  const { data: surveillance, isLoading: loadingSurveillance, refetch } = useQuery({
+  // Fetch surveillance data (skip if demo mode)
+  const { data: realSurveillance, isLoading: loadingSurveillance, refetch } = useQuery({
     queryKey: ['surveillance', selectedPeriod],
     queryFn: () => analyticsApi.surveillance(selectedPeriod).then(res => res.data),
-    refetchInterval: 60000, // Auto-refresh every minute
+    refetchInterval: isDemo ? false : 60000, // Auto-refresh every minute (only for real data)
+    enabled: !isDemo,
   })
   
-  // Fetch disease trends
-  const { data: trends } = useQuery({
+  // Fetch disease trends (skip if demo mode)
+  const { data: realTrends } = useQuery({
     queryKey: ['trends', selectedPeriod],
     queryFn: () => analyticsApi.trends({ days: selectedPeriod }).then(res => res.data),
+    enabled: !isDemo,
   })
   
-  // Fetch comorbidity data
-  const { data: comorbidity } = useQuery({
+  // Fetch comorbidity data (skip if demo mode)
+  const { data: realComorbidity } = useQuery({
     queryKey: ['comorbidity'],
     queryFn: () => analyticsApi.comorbidity().then(res => res.data),
+    enabled: !isDemo,
   })
+  
+  // Use demo or real data based on URL param
+  const dashboardData = isDemo ? dummyDashboardData : realDashboardData
+  const surveillance = isDemo ? dummySurveillanceData : realSurveillance
+  const trends = isDemo ? dummyTrendsData : realTrends
+  const comorbidity = isDemo ? dummyComorbidityData : realComorbidity
   
   const alerts = surveillance?.alerts || []
   const clusters = surveillance?.geographic_clusters || []
@@ -202,7 +224,8 @@ export default function SurveillanceDashboard() {
   // Prepare comorbidity data for visualization
   const comorbidityData = (comorbidity?.comorbidities || []).slice(0, 10)
 
-  if (loadingSurveillance) {
+  // Only show loading when not in demo mode
+  if (!isDemo && loadingSurveillance) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
@@ -212,6 +235,18 @@ export default function SurveillanceDashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Demo Mode Banner */}
+      {isDemo && (
+        <div className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-4 py-3 rounded-lg flex items-center gap-3">
+          <Database className="h-5 w-5 flex-shrink-0" />
+          <div>
+            <span className="font-semibold">Demo Mode Active</span>
+            <span className="text-indigo-100 ml-2">— Showing sample data with 3,000 patients.</span>
+            <span className="text-indigo-200 text-sm ml-2">Remove ?demo=true from URL to use real data.</span>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex justify-between items-start">
         <div>
@@ -230,13 +265,15 @@ export default function SurveillanceDashboard() {
             <option value={60}>Last 60 days</option>
             <option value={90}>Last 90 days</option>
           </select>
-          <button
-            onClick={() => refetch()}
-            className="btn-secondary flex items-center gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </button>
+          {!isDemo && (
+            <button
+              onClick={() => refetch()}
+              className="btn-secondary flex items-center gap-2"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </button>
+          )}
         </div>
       </div>
 

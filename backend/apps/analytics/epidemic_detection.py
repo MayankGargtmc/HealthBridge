@@ -303,7 +303,7 @@ class EpidemicDetector:
                 'co_occurrence_count': count,
             }
             for pair, count in pair_counts.items()
-            if count >= 2  # At least 2 patients with this combination
+            if count >= 1  # Include all disease pairs (lowered from 2)
         ]
         
         comorbidities.sort(key=lambda x: -x['co_occurrence_count'])
