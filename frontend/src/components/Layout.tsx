@@ -5,7 +5,7 @@ import {
   Users, 
   FileText, 
   Activity,
-  Heart
+  Heart,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 

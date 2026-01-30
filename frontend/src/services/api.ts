@@ -88,6 +88,25 @@ export const analyticsApi = {
     api.get<LocationAnalytics[]>('/analytics/locations/'),
   age: () => 
     api.get<{ by_disease: Array<{ disease: string; age_groups: Record<string, number> }> }>('/analytics/age/'),
+  
+  // New surveillance endpoints
+  surveillance: (days?: number) => 
+    api.get('/analytics/surveillance/', { params: { days } }),
+  trends: (params?: { days?: number; disease_id?: string }) => 
+    api.get('/analytics/trends/', { params }),
+  comorbidity: () => 
+    api.get('/analytics/comorbidity/'),
+  advancedFilter: (params: {
+    disease?: string[];
+    age_group?: string[];
+    gender?: string[];
+    location?: string[];
+    state?: string[];
+    date_from?: string;
+    date_to?: string;
+  }) => api.get('/analytics/filters/', { params }),
+  filterOptions: () => 
+    api.get('/analytics/filter-options/'),
 }
 
 // Processing API - New unified processing pipeline
