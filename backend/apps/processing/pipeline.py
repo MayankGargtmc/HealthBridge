@@ -193,12 +193,13 @@ class ProcessingPipeline:
             raw_responses=raw_responses,
         )
     
-    def process_text(self, text: str, **kwargs) -> PipelineResult:
+    def process_text(self, text: str, filename: str = "clinical_text.txt", **kwargs) -> PipelineResult:
         """
         Convenience method for processing plain text (clinical notes, transcripts).
         
         Args:
             text: Clinical text to process
+            filename: Optional filename (default: clinical_text.txt)
             **kwargs: Additional parameters
             
         Returns:
@@ -206,7 +207,7 @@ class ProcessingPipeline:
         """
         return self.process(
             content=text,
-            filename="clinical_text.txt",
+            filename=filename,
             content_type="text/plain",
             user_hint="clinical_text",
             **kwargs

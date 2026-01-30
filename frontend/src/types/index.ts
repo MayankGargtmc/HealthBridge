@@ -28,9 +28,12 @@ export interface DocumentListParams {
 // Patient Types
 export interface Patient {
   id: number | string
+  display_id?: string
   name: string
+  anonymized_name?: string
   phone?: string
   phone_number?: string
+  masked_phone?: string
   age?: number
   gender?: 'male' | 'female' | 'other' | 'unknown'
   diseases?: string[]

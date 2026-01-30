@@ -25,6 +25,9 @@ class PatientSerializer(serializers.ModelSerializer):
     diseases = DiseaseSerializer(many=True, read_only=True)
     disease_list = serializers.ListField(read_only=True)
     age_group = serializers.CharField(read_only=True)
+    display_id = serializers.CharField(read_only=True)
+    anonymized_name = serializers.CharField(read_only=True)
+    masked_phone = serializers.CharField(read_only=True)
     patient_diseases = PatientDiseaseSerializer(
         source='patientdisease_set', 
         many=True, 
@@ -34,7 +37,8 @@ class PatientSerializer(serializers.ModelSerializer):
     class Meta:
         model = Patient
         fields = [
-            'id', 'name', 'age', 'age_group', 'gender', 'phone_number', 'email',
+            'id', 'display_id', 'name', 'anonymized_name', 'age', 'age_group', 
+            'gender', 'phone_number', 'masked_phone', 'email',
             'address', 'city', 'district', 'state', 'pincode', 'location',
             'hospital_clinic', 'doctor_name', 'diseases', 'disease_list',
             'patient_diseases', 'notes', 'economic_status',
@@ -43,14 +47,18 @@ class PatientSerializer(serializers.ModelSerializer):
 
 
 class PatientListSerializer(serializers.ModelSerializer):
-    """Simplified serializer for list views."""
+    """Simplified serializer for list views - uses anonymized data for privacy."""
     disease_list = serializers.ListField(read_only=True)
     age_group = serializers.CharField(read_only=True)
+    display_id = serializers.CharField(read_only=True)
+    anonymized_name = serializers.CharField(read_only=True)
+    masked_phone = serializers.CharField(read_only=True)
     
     class Meta:
         model = Patient
         fields = [
-            'id', 'name', 'age', 'age_group', 'gender', 'phone_number',
+            'id', 'display_id', 'name', 'anonymized_name', 'age', 'age_group', 
+            'gender', 'phone_number', 'masked_phone', 'address',
             'location', 'hospital_clinic', 'disease_list', 'created_at'
         ]
 

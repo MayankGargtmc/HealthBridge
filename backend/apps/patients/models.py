@@ -91,6 +91,42 @@ class Patient(models.Model):
         return list(self.diseases.values_list('name', flat=True))
     
     @property
+    def display_id(self):
+        """Return a short display ID for the patient."""
+        return f"P-{str(self.id)[:8].upper()}"
+    
+    @property
+    def anonymized_name(self):
+        """
+        Return anonymized version of patient name for privacy.
+        Shows first letter + asterisks + last letter, or display_id if no name.
+        Examples: "John Doe" -> "J*** D**", "Anonymous" -> "P-ABC12345"
+        """
+        if not self.name or self.name.startswith('Unknown Patient'):
+            return self.display_id
+        
+        parts = self.name.split()
+        anonymized_parts = []
+        for part in parts:
+            if len(part) <= 2:
+                anonymized_parts.append(part[0] + '*' if len(part) > 0 else '*')
+            else:
+                anonymized_parts.append(part[0] + '*' * (len(part) - 2) + part[-1])
+        return ' '.join(anonymized_parts)
+    
+    @property
+    def masked_phone(self):
+        """
+        Return masked phone number for privacy.
+        Shows last 4 digits only. Example: "9876543210" -> "******3210"
+        """
+        if not self.phone_number:
+            return None
+        if len(self.phone_number) <= 4:
+            return '*' * len(self.phone_number)
+        return '*' * (len(self.phone_number) - 4) + self.phone_number[-4:]
+    
+    @property
     def age_group(self):
         """Return age group for analytics."""
         if self.age is None:

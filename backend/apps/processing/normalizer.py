@@ -67,25 +67,31 @@ class DataNormalizer:
         """Save a single patient record."""
         from apps.patients.models import Patient, Disease, PatientDisease
         
-        # Extract patient info
-        patient_info = record.get('patient', {})
-        medical_info = record.get('medical', record)  # Support both nested and flat structure
-        facility_info = record.get('facility', {})
+        # Extract patient info (ensure we have dicts, not None)
+        patient_info = record.get('patient') or {}
+        medical_info = record.get('medical') or record  # Support both nested and flat structure
+        facility_info = record.get('facility') or {}
         
-        # Get patient name
-        name = patient_info.get('name', '').strip() if patient_info else None
+        # Get patient name (handle None values safely)
+        name = (patient_info.get('name') or '').strip() if patient_info else ''
         
+        # Generate a placeholder name if not available
         if not name:
-            logger.warning("[Normalizer] Skipping record without patient name")
-            return None
+            # Create a unique identifier based on available data
+            import hashlib
+            import time
+            unique_data = f"{patient_info}{facility_info}{time.time()}"
+            hash_suffix = hashlib.md5(unique_data.encode()).hexdigest()[:8].upper()
+            name = f"Unknown Patient {hash_suffix}"
+            logger.info(f"[Normalizer] No patient name found, using placeholder: {name}")
         
         # Log extracted patient info for debugging
         logger.info(f"[Normalizer] Patient info extracted: {patient_info}")
         logger.info(f"[Normalizer] Facility info extracted: {facility_info}")
         
-        # Extract address - could be in patient or facility
-        patient_address = patient_info.get('address', '')
-        facility_address = facility_info.get('address', '')
+        # Extract address - could be in patient or facility (handle None)
+        patient_address = patient_info.get('address') or ''
+        facility_address = facility_info.get('address') or ''
         
         # Use patient address first, then facility address, then default location
         location_value = patient_address or facility_address or default_location
@@ -162,7 +168,7 @@ class DataNormalizer:
                 icd_code = None
                 severity = None
             elif isinstance(disease_data, dict):
-                disease_name = disease_data.get('name', '').strip()
+                disease_name = (disease_data.get('name') or '').strip()
                 icd_code = disease_data.get('icd_code')
                 severity = disease_data.get('severity')
             else:

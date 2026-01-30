@@ -196,7 +196,9 @@ export default function Patients() {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {patients.map((patient) => {
-                    const phone = patient.phone || patient.phone_number || '-'
+                    // Use anonymized/masked fields for privacy
+                    const displayName = patient.anonymized_name || patient.display_id || patient.name
+                    const phone = patient.masked_phone || patient.phone || patient.phone_number || '-'
                     // Handle location - could be string or PatientLocation object
                     const location = typeof patient.location === 'string' 
                       ? patient.location
@@ -210,7 +212,14 @@ export default function Patients() {
                     
                     return (
                       <tr key={patient.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 font-medium">{patient.name}</td>
+                        <td className="px-4 py-3 font-medium">
+                          <div className="flex flex-col">
+                            <span>{displayName}</span>
+                            {patient.display_id && (
+                              <span className="text-xs text-gray-400">{patient.display_id}</span>
+                            )}
+                          </div>
+                        </td>
                         <td className="px-4 py-3 text-gray-600">{patient.age || '-'}</td>
                         <td className="px-4 py-3">
                           <span className={`px-2 py-1 rounded-full text-xs ${
